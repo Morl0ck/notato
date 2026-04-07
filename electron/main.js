@@ -50,6 +50,57 @@ function getActiveScreenBounds() {
   return display.bounds;
 }
 
+/** Place the overlay on whichever display the cursor is on (call before showing after hide or on first paint). */
+function moveOverlayToActiveScreen() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setBounds(getActiveScreenBounds());
+}
+
+/** Cancels any in-flight overlay fade when a new show starts. */
+let overlayFadeGeneration = 0;
+
+const OVERLAY_FADE_MS = 220;
+
+/** Ease-out cubic: smoother stop than linear. */
+function fadeInMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const win = mainWindow;
+  const gen = ++overlayFadeGeneration;
+  const start = Date.now();
+
+  const tick = () => {
+    if (gen !== overlayFadeGeneration || win.isDestroyed()) return;
+    const t = Math.min(1, (Date.now() - start) / OVERLAY_FADE_MS);
+    const eased = 1 - (1 - t) ** 3;
+    win.setOpacity(eased);
+    if (t < 1) {
+      setTimeout(tick, 16);
+    } else {
+      win.setOpacity(1);
+    }
+  };
+  tick();
+}
+
+/**
+ * Show the overlay on the active display. Uses opacity fade instead of the default OS “pop/scale”
+ * animation (notably on Windows). On Linux, setOpacity is often unsupported; the window still shows.
+ */
+function showOverlayWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const needFade = !mainWindow.isVisible();
+  if (needFade) {
+    mainWindow.setOpacity(0);
+  }
+  moveOverlayToActiveScreen();
+  mainWindow.show();
+  if (needFade) {
+    fadeInMainWindow();
+  } else {
+    mainWindow.setOpacity(1);
+  }
+}
+
 /**
  * After resolution/DPI changes, keep the overlay on the same monitor by finding the display
  * that contains the window center, then matching that display’s bounds.
@@ -113,7 +164,7 @@ function registerGlobalShortcuts() {
     overlayVisible = !overlayVisible;
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (overlayVisible) {
-        mainWindow.show();
+        showOverlayWindow();
       } else {
         mainWindow.hide();
       }
@@ -154,7 +205,7 @@ function createTray() {
     overlayVisible = !overlayVisible;
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (overlayVisible) {
-        mainWindow.show();
+        showOverlayWindow();
       } else {
         mainWindow.hide();
       }
@@ -205,7 +256,7 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
 
   mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
+    showOverlayWindow();
   });
 
   mainWindow.loadFile(path.join(__dirname, "index.html"));
@@ -233,7 +284,7 @@ function setupIpc() {
     overlayVisible = Boolean(visible);
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (overlayVisible) {
-      mainWindow.show();
+      showOverlayWindow();
     } else {
       mainWindow.hide();
     }
