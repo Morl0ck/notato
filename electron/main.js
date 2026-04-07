@@ -50,6 +50,66 @@ function getActiveScreenBounds() {
   return display.bounds;
 }
 
+/** Place the overlay on whichever display the cursor is on (call before showing after hide or on first paint). */
+function moveOverlayToActiveScreen() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setBounds(getActiveScreenBounds());
+}
+
+/** Cancels any in-flight overlay fade when a new show starts. */
+let overlayFadeGeneration = 0;
+
+const OVERLAY_FADE_MS = 220;
+
+/** Ease-out cubic: smoother stop than linear. */
+function fadeInMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const win = mainWindow;
+  const gen = ++overlayFadeGeneration;
+  const start = Date.now();
+
+  const tick = () => {
+    if (gen !== overlayFadeGeneration || win.isDestroyed()) return;
+    const t = Math.min(1, (Date.now() - start) / OVERLAY_FADE_MS);
+    const eased = 1 - (1 - t) ** 3;
+    win.setOpacity(eased);
+    if (t < 1) {
+      setTimeout(tick, 16);
+    } else {
+      win.setOpacity(1);
+    }
+  };
+  tick();
+}
+
+/**
+ * Hide overlay without `BrowserWindow.hide()` on Windows/macOS so a later “show” does not replay
+ * the OS open animation. Linux keeps `hide()` because `setOpacity` is often a no-op there.
+ */
+function hideOverlayWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  overlayFadeGeneration += 1;
+  if (process.platform === "linux") {
+    mainWindow.hide();
+  } else {
+    mainWindow.setOpacity(0);
+  }
+}
+
+/**
+ * Show the overlay on the active display. Fades opacity 0→1. Calls `show()` only when the native
+ * window is not yet visible (first paint after create, or Linux after `hide()`).
+ */
+function showOverlayWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  moveOverlayToActiveScreen();
+  mainWindow.setOpacity(0);
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+  fadeInMainWindow();
+}
+
 /**
  * After resolution/DPI changes, keep the overlay on the same monitor by finding the display
  * that contains the window center, then matching that display’s bounds.
@@ -113,9 +173,9 @@ function registerGlobalShortcuts() {
     overlayVisible = !overlayVisible;
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (overlayVisible) {
-        mainWindow.show();
+        showOverlayWindow();
       } else {
-        mainWindow.hide();
+        hideOverlayWindow();
       }
     }
     applyMousePassthrough();
@@ -154,9 +214,9 @@ function createTray() {
     overlayVisible = !overlayVisible;
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (overlayVisible) {
-        mainWindow.show();
+        showOverlayWindow();
       } else {
-        mainWindow.hide();
+        hideOverlayWindow();
       }
     }
     applyMousePassthrough();
@@ -205,7 +265,7 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
 
   mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
+    showOverlayWindow();
   });
 
   mainWindow.loadFile(path.join(__dirname, "index.html"));
@@ -233,9 +293,9 @@ function setupIpc() {
     overlayVisible = Boolean(visible);
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (overlayVisible) {
-      mainWindow.show();
+      showOverlayWindow();
     } else {
-      mainWindow.hide();
+      hideOverlayWindow();
     }
     applyMousePassthrough();
     broadcastOverlayState();
