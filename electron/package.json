@@ -1,0 +1,38 @@
+{
+  "name": "notato",
+  "productName": "Notato",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Screen annotation overlay (Electron)",
+  "author": "Notato",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "34.5.8",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.notato.notato",
+    "forceCodeSigning": false,
+    "directories": {
+      "output": "out"
+    },
+    "files": ["main.js", "preload.js", "index.html", "renderer/**/*"],
+    "win": {
+      "target": ["nsis"],
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Graphics"
+    }
+  }
+}

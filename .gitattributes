@@ -1,0 +1,2 @@
+# Consistent line endings: LF in repo and working tree (avoids CRLF warnings on Windows).
+* text=auto eol=lf
