@@ -277,6 +277,11 @@
         transition: opacity 0.3s ease;
       }
 
+      /* Typical Windows taskbar (~40–48px); keeps the hint above it. */
+      html.platform-win32 #status {
+        bottom: 52px;
+      }
+
       #canvas-panel {
         position: fixed;
         top: 80px;

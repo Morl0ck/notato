@@ -264,6 +264,11 @@ function createWindow() {
 
   mainWindow.setMenuBarVisibility(false);
 
+  if (process.platform === "darwin") {
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    mainWindow.setAlwaysOnTop(true, "screen-saver");
+  }
+
   mainWindow.once("ready-to-show", () => {
     showOverlayWindow();
   });

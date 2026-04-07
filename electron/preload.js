@@ -1,5 +1,15 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const platform = process.platform;
+const markPlatformClass = () => {
+  document.documentElement.classList.add(`platform-${platform}`);
+};
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", markPlatformClass, { once: true });
+} else {
+  markPlatformClass();
+}
+
 /**
  * Narrow preload bridge: renderer has no Node integration.
  * @typedef {'toggleDrawing'|'toggleVisibility'|'clearCanvas'|'setBackgroundBlackboard'|'setBackgroundWhiteboard'|'quit'} MainShortcutAction
