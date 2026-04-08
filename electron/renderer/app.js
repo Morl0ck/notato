@@ -467,7 +467,8 @@ function effectiveCursorDpr() {
 
 /**
  * PNG data URLs work as CSS cursors on Windows; SVG data URLs often do not.
- * Draw in device pixels (no canvas scale transform) so strokes stay sharp on Retina.
+ * Draw in device pixels (no canvas scale transform). macOS composites cursors aggressively;
+ * use a higher internal scale there so the bitmap stays sharp after downscaling.
  * CSP must allow img-src data: (see index.html).
  *
  * @param {string} color
@@ -475,17 +476,18 @@ function effectiveCursorDpr() {
  * @returns {string}
  */
 function brushDotCursorCss(color, strokeWidth) {
+  const mac = document.documentElement.classList.contains("platform-darwin");
   const rCss = Math.min(Math.max(strokeWidth / 2, 2), 28);
   const padCss = 4;
-  const dimCss = Math.max(9, Math.ceil(rCss * 2 + padCss * 2));
-  const dpr = effectiveCursorDpr();
+  const baseDpr = effectiveCursorDpr();
+  const dpr = mac
+    ? Math.min(Math.max(Math.round(baseDpr * 2), 3), 6)
+    : baseDpr;
 
   const rDev = Math.max(2, Math.round(rCss * dpr));
-  const rOuterDev = Math.max(rDev + 1, Math.round((rCss + 1) * dpr));
-  const lwWhite = Math.max(1, Math.round(2 * dpr));
-  const lwBlack = Math.max(1, Math.round(1 * dpr));
-  const padDev = Math.round(padCss * dpr);
-  const outerR = rOuterDev + lwWhite * 0.5 + padDev;
+  const lwBlack = Math.max(1, Math.round(baseDpr));
+  const padDev = Math.max(2, Math.round(padCss * baseDpr));
+  const outerR = rDev + lwBlack * 0.5 + padDev;
   let bmp = Math.max(9, Math.ceil(outerR * 2));
   if (bmp % 2 === 1) bmp += 1;
 
@@ -501,14 +503,12 @@ function brushDotCursorCss(color, strokeWidth) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return "default";
 
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, rOuterDev, 0, Math.PI * 2);
-  ctx.strokeStyle = "rgba(255,255,255,0.92)";
-  ctx.lineWidth = lwWhite;
-  ctx.stroke();
+  if (mac) {
+    ctx.imageSmoothingEnabled = false;
+  } else {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+  }
 
   ctx.beginPath();
   ctx.arc(cx, cy, rDev, 0, Math.PI * 2);
