@@ -594,7 +594,9 @@ function forceRefreshDrawingCursor() {
   }
   el.style.cursor = "default";
   requestAnimationFrame(() => {
-    updateDrawingCursor();
+    requestAnimationFrame(() => {
+      updateDrawingCursor();
+    });
   });
 }
 

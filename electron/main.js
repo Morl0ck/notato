@@ -177,20 +177,34 @@ function notifyRendererRefreshCursor() {
 }
 
 /**
- * WebKit often skips pointerenter when the cursor returns from another display; compare OS cursor
- * position to overlay bounds so we can ping the renderer to reset the CSS brush cursor.
+ * macOS: after another app becomes key on another display, the panel stays visually on top but is
+ * inactive — WebKit will not reliably apply CSS cursors until the window is re-stacked / focused.
+ * Pointer DOM events also often skip pointerenter across displays, so we detect OS cursor vs bounds.
+ * (Darwin only; other platforms rely on window focus/move handlers.)
  */
 let lastCursorInsideOverlay = undefined;
 /** @type {ReturnType<typeof setInterval> | null} */
 let cursorReenterPollInterval = null;
 
+function handleCursorReenteredNotatoDisplay() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  applyOverlayStacking();
+  applyMousePassthrough();
+  try {
+    mainWindow.moveTop();
+  } catch {
+    /* ignore */
+  }
+  if (process.platform === "darwin" && drawingEnabled) {
+    mainWindow.focus();
+  }
+  notifyRendererRefreshCursor();
+}
+
 function tickCursorReenterPoll() {
+  if (process.platform !== "darwin") return;
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (!overlayVisible) {
-    lastCursorInsideOverlay = undefined;
-    return;
-  }
-  if (process.platform === "linux" && !mainWindow.isVisible()) {
     lastCursorInsideOverlay = undefined;
     return;
   }
@@ -203,14 +217,15 @@ function tickCursorReenterPoll() {
     return;
   }
   if (lastCursorInsideOverlay === false && inside) {
-    notifyRendererRefreshCursor();
+    handleCursorReenteredNotatoDisplay();
   }
   lastCursorInsideOverlay = inside;
 }
 
 function startCursorReenterPoll() {
+  if (process.platform !== "darwin") return;
   if (cursorReenterPollInterval) return;
-  cursorReenterPollInterval = setInterval(tickCursorReenterPoll, 100);
+  cursorReenterPollInterval = setInterval(tickCursorReenterPoll, 200);
 }
 
 function broadcastOverlayState() {
@@ -462,6 +477,12 @@ app.whenReady().then(() => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+      return;
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      applyOverlayStacking();
+      applyMousePassthrough();
+      notifyRendererRefreshCursor();
     }
   });
 });
