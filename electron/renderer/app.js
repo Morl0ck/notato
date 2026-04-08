@@ -448,6 +448,7 @@ function parseHexRgb(hex) {
 
 /**
  * PNG data URLs work as CSS cursors on Windows; SVG data URLs often do not.
+ * Rasterize at devicePixelRatio so Retina Mac cursors stay sharp (1× bitmaps look fuzzy).
  * CSP must allow img-src data: (see index.html).
  *
  * @param {string} color
@@ -459,15 +460,19 @@ function brushDotCursorCss(color, strokeWidth) {
   const pad = 4;
   const dim = Math.max(9, Math.ceil(r * 2 + pad * 2));
   const c = dim / 2;
-  const hx = Math.floor(dim / 2);
-  const hy = Math.floor(dim / 2);
+  const dpr = Math.min(window.devicePixelRatio || 1, 4);
+  const bmp = Math.max(1, Math.round(dim * dpr));
+  const hx = Math.floor(bmp / 2);
+  const hy = Math.floor(bmp / 2);
   const { r: fr, g: fg, b: fb } = parseHexRgb(color);
 
   const canvas = document.createElement("canvas");
-  canvas.width = dim;
-  canvas.height = dim;
+  canvas.width = bmp;
+  canvas.height = bmp;
   const ctx = canvas.getContext("2d");
   if (!ctx) return "default";
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   ctx.beginPath();
   ctx.arc(c, c, r + 1, 0, Math.PI * 2);
