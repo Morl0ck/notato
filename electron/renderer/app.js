@@ -447,8 +447,27 @@ function parseHexRgb(hex) {
 }
 
 /**
+ * Transparent Electron windows on macOS often report `devicePixelRatio === 1` on Retina hardware;
+ * use media queries so we still rasterize at 2× (or higher) when the display is HiDPI.
+ */
+function effectiveCursorDpr() {
+  let d = window.devicePixelRatio || 1;
+  try {
+    const hiDpi =
+      matchMedia("(min-resolution: 2dppx)").matches ||
+      matchMedia("(-webkit-min-device-pixel-ratio: 2)").matches;
+    if (hiDpi && d < 1.75) {
+      d = 2;
+    }
+  } catch {
+    /* ignore */
+  }
+  return Math.min(Math.max(d, 1), 4);
+}
+
+/**
  * PNG data URLs work as CSS cursors on Windows; SVG data URLs often do not.
- * Rasterize at devicePixelRatio so Retina Mac cursors stay sharp (1× bitmaps look fuzzy).
+ * Draw in device pixels (no canvas scale transform) so strokes stay sharp on Retina.
  * CSP must allow img-src data: (see index.html).
  *
  * @param {string} color
@@ -456,12 +475,22 @@ function parseHexRgb(hex) {
  * @returns {string}
  */
 function brushDotCursorCss(color, strokeWidth) {
-  const r = Math.min(Math.max(strokeWidth / 2, 2), 28);
-  const pad = 4;
-  const dim = Math.max(9, Math.ceil(r * 2 + pad * 2));
-  const c = dim / 2;
-  const dpr = Math.min(window.devicePixelRatio || 1, 4);
-  const bmp = Math.max(1, Math.round(dim * dpr));
+  const rCss = Math.min(Math.max(strokeWidth / 2, 2), 28);
+  const padCss = 4;
+  const dimCss = Math.max(9, Math.ceil(rCss * 2 + padCss * 2));
+  const dpr = effectiveCursorDpr();
+
+  const rDev = Math.max(2, Math.round(rCss * dpr));
+  const rOuterDev = Math.max(rDev + 1, Math.round((rCss + 1) * dpr));
+  const lwWhite = Math.max(1, Math.round(2 * dpr));
+  const lwBlack = Math.max(1, Math.round(1 * dpr));
+  const padDev = Math.round(padCss * dpr);
+  const outerR = rOuterDev + lwWhite * 0.5 + padDev;
+  let bmp = Math.max(9, Math.ceil(outerR * 2));
+  if (bmp % 2 === 1) bmp += 1;
+
+  const cx = bmp / 2;
+  const cy = bmp / 2;
   const hx = Math.floor(bmp / 2);
   const hy = Math.floor(bmp / 2);
   const { r: fr, g: fg, b: fb } = parseHexRgb(color);
@@ -472,20 +501,21 @@ function brushDotCursorCss(color, strokeWidth) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return "default";
 
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
 
   ctx.beginPath();
-  ctx.arc(c, c, r + 1, 0, Math.PI * 2);
+  ctx.arc(cx, cy, rOuterDev, 0, Math.PI * 2);
   ctx.strokeStyle = "rgba(255,255,255,0.92)";
-  ctx.lineWidth = 2;
+  ctx.lineWidth = lwWhite;
   ctx.stroke();
 
   ctx.beginPath();
-  ctx.arc(c, c, r, 0, Math.PI * 2);
+  ctx.arc(cx, cy, rDev, 0, Math.PI * 2);
   ctx.fillStyle = `rgb(${fr},${fg},${fb})`;
   ctx.fill();
   ctx.strokeStyle = "rgba(0,0,0,0.45)";
-  ctx.lineWidth = 1;
+  ctx.lineWidth = lwBlack;
   ctx.stroke();
 
   let url;

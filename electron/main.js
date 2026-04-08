@@ -88,6 +88,7 @@ function fadeInMainWindow() {
  */
 function hideOverlayWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  lastCursorInsideOverlay = undefined;
   overlayFadeGeneration += 1;
   if (process.platform === "linux") {
     mainWindow.hide();
@@ -102,6 +103,7 @@ function hideOverlayWindow() {
  */
 function showOverlayWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  lastCursorInsideOverlay = undefined;
   moveOverlayToActiveScreen();
   mainWindow.setOpacity(0);
   if (!mainWindow.isVisible()) {
@@ -172,6 +174,43 @@ function notifyRendererRefreshCursor() {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
     mainWindow.webContents.send("refresh-cursor");
   });
+}
+
+/**
+ * WebKit often skips pointerenter when the cursor returns from another display; compare OS cursor
+ * position to overlay bounds so we can ping the renderer to reset the CSS brush cursor.
+ */
+let lastCursorInsideOverlay = undefined;
+/** @type {ReturnType<typeof setInterval> | null} */
+let cursorReenterPollInterval = null;
+
+function tickCursorReenterPoll() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!overlayVisible) {
+    lastCursorInsideOverlay = undefined;
+    return;
+  }
+  if (process.platform === "linux" && !mainWindow.isVisible()) {
+    lastCursorInsideOverlay = undefined;
+    return;
+  }
+  const p = screen.getCursorScreenPoint();
+  const b = mainWindow.getBounds();
+  const inside =
+    p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
+  if (lastCursorInsideOverlay === undefined) {
+    lastCursorInsideOverlay = inside;
+    return;
+  }
+  if (lastCursorInsideOverlay === false && inside) {
+    notifyRendererRefreshCursor();
+  }
+  lastCursorInsideOverlay = inside;
+}
+
+function startCursorReenterPoll() {
+  if (cursorReenterPollInterval) return;
+  cursorReenterPollInterval = setInterval(tickCursorReenterPoll, 100);
 }
 
 function broadcastOverlayState() {
@@ -411,6 +450,7 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
   registerGlobalShortcuts();
+  startCursorReenterPoll();
 
   screen.on("display-metrics-changed", () => {
     syncOverlayBoundsToContainingDisplay();
@@ -428,6 +468,10 @@ app.whenReady().then(() => {
 
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
+  if (cursorReenterPollInterval) {
+    clearInterval(cursorReenterPollInterval);
+    cursorReenterPollInterval = null;
+  }
 });
 
 app.on("window-all-closed", () => {
