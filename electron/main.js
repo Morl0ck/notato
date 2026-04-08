@@ -107,6 +107,8 @@ function showOverlayWindow() {
   if (!mainWindow.isVisible()) {
     mainWindow.show();
   }
+  applyOverlayStacking();
+  applyMousePassthrough();
   fadeInMainWindow();
   if (process.platform === "darwin") {
     setTimeout(() => {
@@ -142,6 +144,21 @@ function applyMousePassthrough() {
   }
 }
 
+/**
+ * Re-apply native Z-order. On Windows, a plain always-on-top frameless window often drops behind
+ * normal windows after focus moves to another monitor; macOS already uses screen-saver level.
+ */
+function applyOverlayStacking() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (process.platform === "darwin") {
+    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+  } else if (process.platform === "win32") {
+    mainWindow.setAlwaysOnTop(true, "screen-saver");
+  } else {
+    mainWindow.setAlwaysOnTop(true);
+  }
+}
+
 function broadcastOverlayState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send("overlay-state", {
@@ -172,6 +189,7 @@ function registerGlobalShortcuts() {
 
   reg("A", () => {
     drawingEnabled = !drawingEnabled;
+    applyOverlayStacking();
     applyMousePassthrough();
     broadcastOverlayState();
   });
@@ -283,11 +301,16 @@ function createWindow() {
 
   if (darwin) {
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
   }
+  applyOverlayStacking();
 
   mainWindow.once("ready-to-show", () => {
     showOverlayWindow();
+  });
+
+  mainWindow.on("focus", () => {
+    applyOverlayStacking();
+    applyMousePassthrough();
   });
 
   mainWindow.loadFile(path.join(__dirname, "index.html"));
@@ -307,6 +330,7 @@ function setupIpc() {
 
   ipcMain.handle("window:setDrawingEnabled", (_e, enabled) => {
     drawingEnabled = Boolean(enabled);
+    applyOverlayStacking();
     applyMousePassthrough();
     broadcastOverlayState();
   });
@@ -367,6 +391,8 @@ app.whenReady().then(() => {
 
   screen.on("display-metrics-changed", () => {
     syncOverlayBoundsToContainingDisplay();
+    applyOverlayStacking();
+    applyMousePassthrough();
   });
 
   app.on("activate", () => {

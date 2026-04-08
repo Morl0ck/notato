@@ -554,6 +554,11 @@ function updateDrawingCursor() {
 window.addEventListener("resize", () => {
   renderer.resize();
   updateSelectionOverlay();
+  updateDrawingCursor();
+});
+
+window.addEventListener("focus", () => {
+  updateDrawingCursor();
 });
 
 function getPoint(e) {
@@ -1019,6 +1024,8 @@ function applyOverlayUi() {
   setTimeout(() => {
     status.style.opacity = drawingEnabled ? "0.5" : "0";
   }, 1500);
+
+  updateDrawingCursor();
 }
 
 async function persistUiPrefs() {
