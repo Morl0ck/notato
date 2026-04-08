@@ -261,6 +261,8 @@ function createWindow() {
     alwaysOnTop: true,
     resizable: true,
     thickFrame: false,
+    /** Native rounded window clip (macOS / Win 11+); off so full-screen overlay meets display corners. */
+    roundedCorners: false,
     ...(darwin
       ? {
           /** Lets the window use full `Display.bounds` (under menu bar), not only `workArea`. */
