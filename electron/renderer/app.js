@@ -9,6 +9,11 @@ function generateId() {
   return ms.toString(16) + (r >>> 0).toString(16);
 }
 
+/** Cmd on macOS, Ctrl on Windows/Linux — matches platform edit shortcuts. */
+function primaryModDown(e) {
+  return e.metaKey || e.ctrlKey;
+}
+
 const container = document.getElementById("app");
 const toolbar = document.getElementById("toolbar");
 const status = document.getElementById("status");
@@ -755,13 +760,13 @@ document.getElementById("btn-new-canvas").addEventListener("click", () => {
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
 
-  if (e.ctrlKey && e.key === "s") {
+  if (primaryModDown(e) && e.key === "s") {
     e.preventDefault();
     void saveCanvas();
     return;
   }
 
-  if (e.ctrlKey && e.key.toLowerCase() === "y") {
+  if (primaryModDown(e) && e.key.toLowerCase() === "y") {
     e.preventDefault();
     renderer.redo();
     updateSelectionOverlay();
@@ -769,7 +774,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
-  if (e.ctrlKey && e.key.toLowerCase() === "z") {
+  if (primaryModDown(e) && e.key.toLowerCase() === "z") {
     e.preventDefault();
     if (e.shiftKey) {
       renderer.redo();
@@ -955,6 +960,13 @@ async function bootstrap() {
     return;
   }
 
+  const mac = document.documentElement.classList.contains("platform-darwin");
+  document.getElementById("btn-undo").title = mac ? "Undo (⌘Z)" : "Undo (Ctrl+Z)";
+  document.getElementById("btn-redo").title = mac
+    ? "Redo (⌘⇧Z or Ctrl+Y)"
+    : "Redo (Ctrl+Y or Ctrl+Shift+Z)";
+  document.getElementById("btn-save").title = mac ? "Save (⌘S)" : "Save (Ctrl+S)";
+
   notato.onOverlayState((s) => {
     drawingEnabled = s.drawingEnabled;
     appVisible = s.overlayVisible;
@@ -1043,8 +1055,9 @@ async function bootstrap() {
   updateDrawingCursor();
   updateSelectionOverlay();
 
-  status.innerHTML =
-    "Press <b>Ctrl+Shift+A</b> to toggle drawing | <b>Tab</b> for canvases";
+  status.innerHTML = mac
+    ? "Press <b>⌘⇧A</b> to toggle drawing | <b>Tab</b> for canvases"
+    : "Press <b>Ctrl+Shift+A</b> to toggle drawing | <b>Tab</b> for canvases";
   setTimeout(() => {
     status.style.opacity = "0.5";
   }, 3000);
