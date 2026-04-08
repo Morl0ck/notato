@@ -581,8 +581,11 @@ function updateDrawingCursor() {
   el.style.cursor = brushDotCursorCss(currentColor, currentSize);
 }
 
-/** WebKit on macOS often keeps a stale CSS cursor after moving between displays until it is reset. */
-function forceRefreshDrawingCursor() {
+/**
+ * @param {boolean} [hardReset] If true, briefly set default cursor (fixes stuck WebKit cursor after
+ *   display / activation changes). Soft path only reapplies the brush — avoids arrow flashing while drawing.
+ */
+function forceRefreshDrawingCursor(hardReset = false) {
   if (!drawingEnabled) {
     updateDrawingCursor();
     return;
@@ -592,7 +595,9 @@ function forceRefreshDrawingCursor() {
     updateDrawingCursor();
     return;
   }
-  el.style.cursor = "default";
+  if (hardReset) {
+    el.style.cursor = "default";
+  }
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       updateDrawingCursor();
@@ -607,15 +612,17 @@ window.addEventListener("resize", () => {
 });
 
 window.addEventListener("focus", () => {
-  forceRefreshDrawingCursor();
+  if (isDrawing) return;
+  forceRefreshDrawingCursor(false);
 });
 
 document.addEventListener(
   "pointerenter",
   (e) => {
+    if (isDrawing) return;
     const rt = e.relatedTarget;
     if (rt && document.documentElement.contains(rt)) return;
-    forceRefreshDrawingCursor();
+    forceRefreshDrawingCursor(false);
   },
   true,
 );
@@ -1084,7 +1091,7 @@ function applyOverlayUi() {
     status.style.opacity = drawingEnabled ? "0.5" : "0";
   }, 1500);
 
-  forceRefreshDrawingCursor();
+  forceRefreshDrawingCursor(false);
 }
 
 async function persistUiPrefs() {
@@ -1119,8 +1126,9 @@ async function bootstrap() {
     applyOverlayUi();
   });
 
-  notato.onRefreshCursor(() => {
-    forceRefreshDrawingCursor();
+  notato.onRefreshCursor((hard) => {
+    if (isDrawing) return;
+    forceRefreshDrawingCursor(hard);
   });
 
   notato.onShortcutAction((action) => {

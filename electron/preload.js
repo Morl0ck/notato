@@ -42,9 +42,12 @@ contextBridge.exposeInMainWorld("notato", {
     };
   },
 
-  /** macOS panel windows often skip window focus; main pings after display/move so CSS cursor repaints. */
+  /**
+   * @param {(hardReset: boolean) => void} callback
+   * `hardReset` clears to default cursor first (cross-display / DPI); soft only reapplies brush (no flash).
+   */
   onRefreshCursor(callback) {
-    const handler = () => callback();
+    const handler = (_e, hard) => callback(Boolean(hard));
     ipcRenderer.on("refresh-cursor", handler);
     return () => {
       ipcRenderer.removeListener("refresh-cursor", handler);

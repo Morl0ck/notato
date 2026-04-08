@@ -111,7 +111,7 @@ function showOverlayWindow() {
   }
   applyOverlayStacking();
   applyMousePassthrough();
-  notifyRendererRefreshCursor();
+  notifyRendererRefreshCursor(false);
   fadeInMainWindow();
   if (process.platform === "darwin") {
     setTimeout(() => {
@@ -162,17 +162,24 @@ function applyOverlayStacking() {
   }
 }
 
-/** Coalesce: move/resize can spam; one IPC per tick is enough to fix stuck CSS cursors. */
+/**
+ * Coalesce IPC: one send per tick. `hard` ORs across the tick so a cross-display reset is not lost.
+ * Soft refresh avoids `cursor: default` in the renderer (prevents arrow flashing while drawing).
+ */
 let refreshCursorSendScheduled = false;
-function notifyRendererRefreshCursor() {
+let pendingRefreshCursorHard = false;
+function notifyRendererRefreshCursor(hard = false) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.webContents.isDestroyed()) return;
+  if (hard) pendingRefreshCursorHard = true;
   if (refreshCursorSendScheduled) return;
   refreshCursorSendScheduled = true;
   queueMicrotask(() => {
     refreshCursorSendScheduled = false;
+    const useHard = pendingRefreshCursorHard;
+    pendingRefreshCursorHard = false;
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
-    mainWindow.webContents.send("refresh-cursor");
+    mainWindow.webContents.send("refresh-cursor", useHard);
   });
 }
 
@@ -198,7 +205,7 @@ function handleCursorReenteredNotatoDisplay() {
   if (process.platform === "darwin" && drawingEnabled) {
     mainWindow.focus();
   }
-  notifyRendererRefreshCursor();
+  notifyRendererRefreshCursor(true);
 }
 
 function tickCursorReenterPoll() {
@@ -380,14 +387,11 @@ function createWindow() {
   mainWindow.on("focus", () => {
     applyOverlayStacking();
     applyMousePassthrough();
-    notifyRendererRefreshCursor();
+    notifyRendererRefreshCursor(false);
   });
 
-  mainWindow.on("move", notifyRendererRefreshCursor);
-  mainWindow.on("resize", notifyRendererRefreshCursor);
-
   mainWindow.webContents.on("focus", () => {
-    notifyRendererRefreshCursor();
+    notifyRendererRefreshCursor(false);
   });
 
   mainWindow.loadFile(path.join(__dirname, "index.html"));
@@ -471,7 +475,7 @@ app.whenReady().then(() => {
     syncOverlayBoundsToContainingDisplay();
     applyOverlayStacking();
     applyMousePassthrough();
-    notifyRendererRefreshCursor();
+    notifyRendererRefreshCursor(true);
   });
 
   app.on("activate", () => {
@@ -482,7 +486,7 @@ app.whenReady().then(() => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       applyOverlayStacking();
       applyMousePassthrough();
-      notifyRendererRefreshCursor();
+      notifyRendererRefreshCursor(false);
     }
   });
 });
