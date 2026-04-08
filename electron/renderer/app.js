@@ -430,6 +430,68 @@ function setTool(tool) {
   void persistUiPrefs();
 }
 
+/**
+ * @param {string} hex
+ * @returns {{ r: number; g: number; b: number }}
+ */
+function parseHexRgb(hex) {
+  if (typeof hex !== "string" || !hex.length) return { r: 0, g: 0, b: 0 };
+  let h = hex.trim().replace(/^#/, "");
+  if (h.length === 3) {
+    h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  }
+  if (h.length !== 6) return { r: 0, g: 0, b: 0 };
+  const n = parseInt(h, 16);
+  if (!Number.isFinite(n)) return { r: 0, g: 0, b: 0 };
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+/**
+ * PNG data URLs work as CSS cursors on Windows; SVG data URLs often do not.
+ * CSP must allow img-src data: (see index.html).
+ *
+ * @param {string} color
+ * @param {number} strokeWidth
+ * @returns {string}
+ */
+function brushDotCursorCss(color, strokeWidth) {
+  const r = Math.min(Math.max(strokeWidth / 2, 2), 28);
+  const pad = 4;
+  const dim = Math.max(9, Math.ceil(r * 2 + pad * 2));
+  const c = dim / 2;
+  const hx = Math.floor(dim / 2);
+  const hy = Math.floor(dim / 2);
+  const { r: fr, g: fg, b: fb } = parseHexRgb(color);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = dim;
+  canvas.height = dim;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "default";
+
+  ctx.beginPath();
+  ctx.arc(c, c, r + 1, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(255,255,255,0.92)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(c, c, r, 0, Math.PI * 2);
+  ctx.fillStyle = `rgb(${fr},${fg},${fb})`;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.45)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  let url;
+  try {
+    url = canvas.toDataURL("image/png");
+  } catch {
+    return "default";
+  }
+  return `url("${url}") ${hx} ${hy}, default`;
+}
+
 function updateSelectionOverlay() {
   const id = renderer.getSelectedId();
   if (
@@ -473,7 +535,15 @@ function updateSelectionOverlay() {
 
 function updateDrawingCursor() {
   const el = renderer.getElement();
-  el.style.cursor = currentTool === "select" ? "default" : "crosshair";
+  if (currentTool === "select") {
+    el.style.cursor = "default";
+    return;
+  }
+  if (currentTool === "eraser") {
+    el.style.cursor = "not-allowed";
+    return;
+  }
+  el.style.cursor = brushDotCursorCss(currentColor, currentSize);
 }
 
 window.addEventListener("resize", () => {
@@ -714,6 +784,7 @@ swatches.forEach((swatch) => {
     swatches.forEach((s) => s.classList.remove("active"));
     swatch.classList.add("active");
     currentColor = swatch.dataset.color;
+    updateDrawingCursor();
     void persistUiPrefs();
   });
 });
@@ -724,6 +795,7 @@ const sizeDisplay = document.getElementById("size-display");
 sizeSlider.addEventListener("input", () => {
   currentSize = parseInt(sizeSlider.value, 10);
   sizeDisplay.textContent = String(currentSize);
+  updateDrawingCursor();
   void persistUiPrefs();
 });
 
@@ -866,6 +938,7 @@ document.addEventListener("keydown", (e) => {
     swatches.forEach((s) => s.classList.remove("active"));
     swatches[idx].classList.add("active");
     currentColor = swatches[idx].dataset.color;
+    updateDrawingCursor();
     void persistUiPrefs();
     return;
   }
@@ -874,6 +947,7 @@ document.addEventListener("keydown", (e) => {
     currentSize = Math.max(1, currentSize - 1);
     sizeSlider.value = String(currentSize);
     sizeDisplay.textContent = String(currentSize);
+    updateDrawingCursor();
     void persistUiPrefs();
     return;
   }
@@ -881,6 +955,7 @@ document.addEventListener("keydown", (e) => {
     currentSize = Math.min(20, currentSize + 1);
     sizeSlider.value = String(currentSize);
     sizeDisplay.textContent = String(currentSize);
+    updateDrawingCursor();
     void persistUiPrefs();
   }
 });
