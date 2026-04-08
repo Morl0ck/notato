@@ -108,6 +108,12 @@ function showOverlayWindow() {
     mainWindow.show();
   }
   fadeInMainWindow();
+  if (process.platform === "darwin") {
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      moveOverlayToActiveScreen();
+    }, 0);
+  }
 }
 
 /**
@@ -239,6 +245,7 @@ function canvasPath(id) {
 
 function createWindow() {
   const b = getActiveScreenBounds();
+  const darwin = process.platform === "darwin";
 
   mainWindow = new BrowserWindow({
     x: b.x,
@@ -254,6 +261,14 @@ function createWindow() {
     alwaysOnTop: true,
     resizable: true,
     thickFrame: false,
+    ...(darwin
+      ? {
+          /** Lets the window use full `Display.bounds` (under menu bar), not only `workArea`. */
+          enableLargerThanScreen: true,
+          /** NSPanel-style float; appears on all Spaces and stacks above normal windows. */
+          type: "panel",
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -264,9 +279,9 @@ function createWindow() {
 
   mainWindow.setMenuBarVisibility(false);
 
-  if (process.platform === "darwin") {
+  if (darwin) {
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    mainWindow.setAlwaysOnTop(true, "screen-saver");
+    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
   }
 
   mainWindow.once("ready-to-show", () => {
