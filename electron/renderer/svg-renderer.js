@@ -206,9 +206,9 @@ export class SvgRenderer {
     this.strokes = [];
     this.shapes = [];
     this.history = [];
-    /** @type {Array<{ kind: 'append'; type: 'stroke' | 'shape' } | { kind: 'eraser'; snapshot: { strokes: unknown[]; shapes: unknown[]; history: string[]; selectedId: string | null } }>} */
+    /** @type {Array<{ kind: 'append'; type: 'stroke' | 'shape' } | { kind: 'eraser' | 'clear'; snapshot: { strokes: unknown[]; shapes: unknown[]; history: string[]; selectedId: string | null } }>} */
     this.undoStack = [];
-    /** @type {Array<{ kind: 'redo_append'; type: 'stroke' | 'shape'; item: unknown } | { kind: 'redo_eraser'; snapshot: { strokes: unknown[]; shapes: unknown[]; history: string[]; selectedId: string | null } }>} */
+    /** @type {Array<{ kind: 'redo_append'; type: 'stroke' | 'shape'; item: unknown } | { kind: 'redo_eraser' | 'redo_clear'; snapshot: { strokes: unknown[]; shapes: unknown[]; history: string[]; selectedId: string | null } }>} */
     this.redoStack = [];
     this.currentStroke = null;
     this.currentShape = null;
@@ -506,6 +506,22 @@ export class SvgRenderer {
   undo() {
     const op = this.undoStack.pop();
     if (!op) return;
+    if (op.kind === "clear") {
+      this.redoStack.push({ kind: "redo_clear", snapshot: this._snapshotDocument() });
+      const snap = op.snapshot;
+      this.strokes = deepClone(snap.strokes);
+      this.shapes = deepClone(snap.shapes);
+      this.history = deepClone(snap.history);
+      this.selectedId = snap.selectedId ?? null;
+      for (const s of this.strokes) {
+        ensureItemMeta(s);
+      }
+      for (const sh of this.shapes) {
+        ensureItemMeta(sh);
+      }
+      this.redraw();
+      return;
+    }
     if (op.kind === "eraser") {
       this.redoStack.push({ kind: "redo_eraser", snapshot: this._snapshotDocument() });
       const snap = op.snapshot;
@@ -542,6 +558,23 @@ export class SvgRenderer {
   redo() {
     const op = this.redoStack.pop();
     if (!op) return;
+    if (op.kind === "redo_clear") {
+      const undoSnap = this._snapshotDocument();
+      const snap = op.snapshot;
+      this.strokes = deepClone(snap.strokes);
+      this.shapes = deepClone(snap.shapes);
+      this.history = deepClone(snap.history);
+      this.selectedId = snap.selectedId ?? null;
+      for (const s of this.strokes) {
+        ensureItemMeta(s);
+      }
+      for (const sh of this.shapes) {
+        ensureItemMeta(sh);
+      }
+      this.undoStack.push({ kind: "clear", snapshot: undoSnap });
+      this.redraw();
+      return;
+    }
     if (op.kind === "redo_eraser") {
       const undoSnap = this._snapshotDocument();
       const snap = op.snapshot;
@@ -574,12 +607,32 @@ export class SvgRenderer {
     }
   }
 
-  clear() {
+  /**
+   * @param {{ undoable?: boolean }} [opts]
+   * When `undoable`, pushes one undo step that restores the canvas (replaces prior undo history).
+   */
+  clear(opts = {}) {
+    const { undoable = false } = opts;
+    if (undoable) {
+      const snap = this._snapshotDocument();
+      const empty =
+        snap.strokes.length === 0 &&
+        snap.shapes.length === 0 &&
+        snap.history.length === 0;
+      if (!empty) {
+        this.undoStack = [{ kind: "clear", snapshot: snap }];
+        this.redoStack = [];
+      } else {
+        this.undoStack = [];
+        this.redoStack = [];
+      }
+    } else {
+      this.undoStack = [];
+      this.redoStack = [];
+    }
     this.strokes = [];
     this.shapes = [];
     this.history = [];
-    this.undoStack = [];
-    this.redoStack = [];
     this.selectedId = null;
     this.preview.innerHTML = "";
     this.redraw();

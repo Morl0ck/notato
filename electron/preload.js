@@ -42,6 +42,15 @@ contextBridge.exposeInMainWorld("notato", {
     };
   },
 
+  /** macOS panel windows often skip window focus; main pings after display/move so CSS cursor repaints. */
+  onRefreshCursor(callback) {
+    const handler = () => callback();
+    ipcRenderer.on("refresh-cursor", handler);
+    return () => {
+      ipcRenderer.removeListener("refresh-cursor", handler);
+    };
+  },
+
   /** @param {boolean} drawingOn When false, OS passes mouse through the overlay. */
   setDrawingEnabled: (drawingOn) =>
     ipcRenderer.invoke("window:setDrawingEnabled", drawingOn),

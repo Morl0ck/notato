@@ -551,6 +551,23 @@ function updateDrawingCursor() {
   el.style.cursor = brushDotCursorCss(currentColor, currentSize);
 }
 
+/** WebKit on macOS often keeps a stale CSS cursor after moving between displays until it is reset. */
+function forceRefreshDrawingCursor() {
+  if (!drawingEnabled) {
+    updateDrawingCursor();
+    return;
+  }
+  const el = renderer.getElement();
+  if (currentTool === "select" || currentTool === "eraser") {
+    updateDrawingCursor();
+    return;
+  }
+  el.style.cursor = "default";
+  requestAnimationFrame(() => {
+    updateDrawingCursor();
+  });
+}
+
 window.addEventListener("resize", () => {
   renderer.resize();
   updateSelectionOverlay();
@@ -558,8 +575,18 @@ window.addEventListener("resize", () => {
 });
 
 window.addEventListener("focus", () => {
-  updateDrawingCursor();
+  forceRefreshDrawingCursor();
 });
+
+document.addEventListener(
+  "pointerenter",
+  (e) => {
+    const rt = e.relatedTarget;
+    if (rt && document.documentElement.contains(rt)) return;
+    forceRefreshDrawingCursor();
+  },
+  true,
+);
 
 function getPoint(e) {
   return {
@@ -822,7 +849,7 @@ document.getElementById("btn-redo").addEventListener("click", () => {
 });
 
 document.getElementById("btn-clear").addEventListener("click", () => {
-  renderer.clear();
+  renderer.clear({ undoable: true });
   updateSelectionOverlay();
   scheduleAutoSave();
 });
@@ -931,7 +958,7 @@ document.addEventListener("keydown", (e) => {
   }
 
   if (e.key === "c" && !e.ctrlKey && !e.metaKey) {
-    renderer.clear();
+    renderer.clear({ undoable: true });
     updateSelectionOverlay();
     scheduleAutoSave();
     return;
@@ -1025,7 +1052,7 @@ function applyOverlayUi() {
     status.style.opacity = drawingEnabled ? "0.5" : "0";
   }, 1500);
 
-  updateDrawingCursor();
+  forceRefreshDrawingCursor();
 }
 
 async function persistUiPrefs() {
@@ -1060,9 +1087,13 @@ async function bootstrap() {
     applyOverlayUi();
   });
 
+  notato.onRefreshCursor(() => {
+    forceRefreshDrawingCursor();
+  });
+
   notato.onShortcutAction((action) => {
     if (action === "clearCanvas") {
-      renderer.clear();
+      renderer.clear({ undoable: true });
       updateSelectionOverlay();
       scheduleAutoSave();
       return;

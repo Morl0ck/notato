@@ -109,6 +109,7 @@ function showOverlayWindow() {
   }
   applyOverlayStacking();
   applyMousePassthrough();
+  notifyRendererRefreshCursor();
   fadeInMainWindow();
   if (process.platform === "darwin") {
     setTimeout(() => {
@@ -157,6 +158,20 @@ function applyOverlayStacking() {
   } else {
     mainWindow.setAlwaysOnTop(true);
   }
+}
+
+/** Coalesce: move/resize can spam; one IPC per tick is enough to fix stuck CSS cursors. */
+let refreshCursorSendScheduled = false;
+function notifyRendererRefreshCursor() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.webContents.isDestroyed()) return;
+  if (refreshCursorSendScheduled) return;
+  refreshCursorSendScheduled = true;
+  queueMicrotask(() => {
+    refreshCursorSendScheduled = false;
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+    mainWindow.webContents.send("refresh-cursor");
+  });
 }
 
 function broadcastOverlayState() {
@@ -311,6 +326,14 @@ function createWindow() {
   mainWindow.on("focus", () => {
     applyOverlayStacking();
     applyMousePassthrough();
+    notifyRendererRefreshCursor();
+  });
+
+  mainWindow.on("move", notifyRendererRefreshCursor);
+  mainWindow.on("resize", notifyRendererRefreshCursor);
+
+  mainWindow.webContents.on("focus", () => {
+    notifyRendererRefreshCursor();
   });
 
   mainWindow.loadFile(path.join(__dirname, "index.html"));
@@ -393,6 +416,7 @@ app.whenReady().then(() => {
     syncOverlayBoundsToContainingDisplay();
     applyOverlayStacking();
     applyMousePassthrough();
+    notifyRendererRefreshCursor();
   });
 
   app.on("activate", () => {
