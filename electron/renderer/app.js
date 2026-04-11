@@ -217,6 +217,35 @@ async function saveActiveCanvas() {
   });
 }
 
+/** Ensures at least one saved canvas exists so drawing is always associated with a file. */
+async function ensureDefaultCanvas() {
+  if (!notato) return;
+  const state = await notato.loadState();
+  const index = state.index || [];
+  if (index.length > 0) return;
+
+  const id = generateId();
+  index.push({
+    id,
+    name: "Canvas 1",
+    created_at: Date.now(),
+    updated_at: Date.now(),
+  });
+  state.index = index;
+  activeCanvasId = id;
+  state.active_canvas_id = id;
+  renderer.clear();
+  currentBackground = "transparent";
+  applyBackground();
+  await notato.saveState(state);
+  await notato.saveCanvas(id, {
+    document: renderer.getState(),
+    background: currentBackground,
+  });
+  await persistUiPrefs();
+  renderPanel();
+}
+
 async function saveCanvas() {
   if (!notato) return;
   if (activeCanvasId) {
@@ -247,6 +276,9 @@ async function saveCanvas() {
 }
 
 async function newBlankCanvas() {
+  if (!activeCanvasId && !renderer.isEmpty()) {
+    await saveCanvas();
+  }
   if (activeCanvasId) await saveActiveCanvas();
 
   const id = generateId();
@@ -305,14 +337,23 @@ async function deleteCanvas(id) {
   await notato.deleteCanvasFile(id);
   await notato.saveState(state);
 
-  if (activeCanvasId === id) {
-    activeCanvasId = null;
-    state.active_canvas_id = null;
-    await notato.saveState(state);
-    renderer.clear();
-    updateSelectionOverlay();
-    currentBackground = "transparent";
+  if (activeCanvasId !== id) {
+    renderPanel();
+    return;
+  }
+
+  if (index.length > 0) {
+    const next = index[0];
+    const data = await notato.loadCanvas(next.id);
+    renderer.setState(data.document || data);
+    currentBackground = data.background || "transparent";
     applyBackground();
+    activeCanvasId = next.id;
+    state.active_canvas_id = next.id;
+    await notato.saveState(state);
+    updateSelectionOverlay();
+  } else {
+    await ensureDefaultCanvas();
   }
   renderPanel();
 }
@@ -1038,6 +1079,7 @@ document.addEventListener("keydown", (e) => {
 
 function applyBackground() {
   const appEl = document.getElementById("app");
+  const linux = document.documentElement.classList.contains("platform-linux");
   switch (currentBackground) {
     case "blackboard":
       appEl.style.background = "#1e1e1e";
@@ -1046,7 +1088,8 @@ function applyBackground() {
       appEl.style.background = "#ffffff";
       break;
     default:
-      appEl.style.background = "transparent";
+      // Linux: some compositors only hit-test non–fully-transparent overlay pixels.
+      appEl.style.background = linux ? "rgba(0, 0, 0, 0.015)" : "transparent";
       break;
   }
 }
@@ -1147,7 +1190,22 @@ async function bootstrap() {
     }
   });
 
-  const state = await notato.loadState();
+  let state = await notato.loadState();
+  const index = state.index || [];
+  if (index.length === 0) {
+    await ensureDefaultCanvas();
+    state = await notato.loadState();
+  } else {
+    const aid = state.active_canvas_id;
+    const valid =
+      aid && index.some((c) => c.id === aid) ? aid : index[0].id;
+    if (valid !== aid) {
+      state.active_canvas_id = valid;
+      await notato.saveState(state);
+    }
+    activeCanvasId = valid;
+  }
+
   if (state.ui) {
     if (state.ui.current_color) {
       currentColor = state.ui.current_color;
@@ -1185,8 +1243,6 @@ async function bootstrap() {
       uiLayout.canvasPanel = { left: cp.left, top: cp.top };
     }
   }
-
-  activeCanvasId = state.active_canvas_id || null;
 
   const initial = await notato.getOverlayState();
   drawingEnabled = initial.drawingEnabled;

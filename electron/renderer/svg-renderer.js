@@ -194,11 +194,21 @@ export class SvgRenderer {
     this.svg.setAttribute("class", "notato-svg");
     this.svg.style.cssText =
       "position:absolute;inset:0;width:100%;height:100%;pointer-events:auto;overflow:visible;";
+    /** Captures pointer hits on “empty” space (Linux transparent windows often skip fully transparent areas). */
+    this.hitRect = document.createElementNS(NS, "rect");
+    this.hitRect.setAttribute("class", "notato-hit-layer");
+    this.hitRect.setAttribute("x", "0");
+    this.hitRect.setAttribute("y", "0");
+    this.hitRect.setAttribute("width", "100%");
+    this.hitRect.setAttribute("height", "100%");
+    this.hitRect.setAttribute("fill", "rgba(0,0,0,0.012)");
+    this.hitRect.setAttribute("pointer-events", "all");
     this.layer = document.createElementNS(NS, "g");
     this.layer.setAttribute("class", "notato-layer");
     this.layer.setAttribute("style", "isolation:isolate");
     this.preview = document.createElementNS(NS, "g");
     this.preview.setAttribute("class", "notato-preview");
+    this.svg.appendChild(this.hitRect);
     this.svg.appendChild(this.layer);
     this.svg.appendChild(this.preview);
     container.prepend(this.svg);
@@ -238,6 +248,14 @@ export class SvgRenderer {
 
   getSelectedId() {
     return this.selectedId;
+  }
+
+  isEmpty() {
+    return (
+      this.strokes.length === 0 &&
+      this.shapes.length === 0 &&
+      this.history.length === 0
+    );
   }
 
   _snapshotDocument() {
@@ -792,6 +810,8 @@ export class SvgRenderer {
       strokes: this.strokes,
       shapes: this.shapes,
       history: this.history,
+      undoStack: deepClone(this.undoStack),
+      redoStack: deepClone(this.redoStack),
     };
   }
 
@@ -810,8 +830,10 @@ export class SvgRenderer {
     this.strokes = sanitized.strokes;
     this.shapes = sanitized.shapes;
     this.history = sanitized.history;
-    this.undoStack = [];
-    this.redoStack = [];
+    const u = state.undoStack;
+    const r = state.redoStack;
+    this.undoStack = Array.isArray(u) ? deepClone(u) : [];
+    this.redoStack = Array.isArray(r) ? deepClone(r) : [];
     this.currentStroke = null;
     this.currentShape = null;
     this.selectedId = null;

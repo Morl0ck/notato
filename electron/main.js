@@ -6,6 +6,7 @@ const {
   globalShortcut,
   Tray,
   nativeImage,
+  Menu,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -307,20 +308,56 @@ function buildTrayIcon() {
   return nativeImage.createFromBuffer(canvas, { width: size, height: size });
 }
 
-function createTray() {
-  tray = new Tray(buildTrayIcon());
-  tray.setToolTip("Notato");
-  tray.on("click", () => {
-    overlayVisible = !overlayVisible;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (overlayVisible) {
-        showOverlayWindow();
-      } else {
-        hideOverlayWindow();
-      }
+/** Prefer a real PNG (Linux status icons often need PNG); fall back to generated RGBA. */
+function createTrayIconImage() {
+  const pngPath = path.join(__dirname, "tray-icon.png");
+  if (fs.existsSync(pngPath)) {
+    const img = nativeImage.createFromPath(pngPath);
+    if (!img.isEmpty()) return img;
+  }
+  const tinyPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const fromPng = nativeImage.createFromBuffer(tinyPng);
+  if (!fromPng.isEmpty()) return fromPng;
+  return buildTrayIcon();
+}
+
+function trayToggleOverlay() {
+  overlayVisible = !overlayVisible;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (overlayVisible) {
+      showOverlayWindow();
+    } else {
+      hideOverlayWindow();
     }
-    applyMousePassthrough();
-    broadcastOverlayState();
+  }
+  applyMousePassthrough();
+  broadcastOverlayState();
+}
+
+function createTray() {
+  tray = new Tray(createTrayIconImage());
+  tray.setToolTip("Notato");
+  const menu = Menu.buildFromTemplate([
+    {
+      label: "Show / hide overlay",
+      click: () => {
+        trayToggleOverlay();
+      },
+    },
+    { type: "separator" },
+    {
+      label: "Quit Notato",
+      click: () => {
+        app.quit();
+      },
+    },
+  ]);
+  tray.setContextMenu(menu);
+  tray.on("click", () => {
+    trayToggleOverlay();
   });
 }
 
@@ -468,6 +505,11 @@ app.whenReady().then(() => {
   setupIpc();
   createWindow();
   createTray();
+  if (process.platform === "linux") {
+    console.warn(
+      "[Notato] If the tray icon is missing, install libayatana-appindicator3-1 or libappindicator3-1 (package names vary by distro).",
+    );
+  }
   registerGlobalShortcuts();
   startCursorReenterPoll();
 
