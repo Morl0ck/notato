@@ -277,6 +277,12 @@
         transition: opacity 0.3s ease;
       }
 
+      /* macOS / Linux: sit above dock or panel; Windows handled separately. */
+      html.platform-darwin #status,
+      html.platform-linux #status {
+        bottom: 48px;
+      }
+
       /* Typical Windows taskbar (~40–48px); keeps the hint above it. */
       html.platform-win32 #status {
         bottom: 52px;
