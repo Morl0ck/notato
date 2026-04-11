@@ -239,6 +239,15 @@ export class SvgRenderer {
     return this.svg;
   }
 
+  /**
+   * When drawing is off (passthrough), the hit layer must not capture hits — it overrides the SVG’s
+   * CSS pointer-events and can block OS click-through on Linux.
+   * @param {boolean} enabled
+   */
+  setHitLayerPointerEvents(enabled) {
+    this.hitRect.setAttribute("pointer-events", enabled ? "all" : "none");
+  }
+
   setSelectedId(id) {
     this.selectedId = id || null;
     this.layer.querySelectorAll(".draw-item").forEach((el) => {

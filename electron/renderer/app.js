@@ -679,6 +679,62 @@ function getPoint(e) {
 
 const svgEl = renderer.getElement();
 
+/** While drawing a stroke/shape; window listeners keep receiving events over the toolbar (Linux). */
+let drawingPointerId = null;
+/** @type {(() => void) | null} */
+let detachDrawingStrokeListeners = null;
+
+function endDrawingStrokeFromPointer(e) {
+  if (!isDrawing || e.pointerId !== drawingPointerId) return;
+  if (detachDrawingStrokeListeners) {
+    detachDrawingStrokeListeners();
+  }
+  isDrawing = false;
+  drawingPointerId = null;
+  try {
+    svgEl.releasePointerCapture(e.pointerId);
+  } catch {
+    /* ignore */
+  }
+  if (currentTool === "pen" || currentTool === "eraser") {
+    renderer.endStroke();
+    if (currentTool === "eraser") {
+      updateSelectionOverlay();
+    }
+  } else {
+    renderer.endShape();
+  }
+  scheduleAutoSave();
+}
+
+function attachDrawingStrokeListeners() {
+  if (detachDrawingStrokeListeners) return;
+  const move = (e) => {
+    if (!isDrawing || e.pointerId !== drawingPointerId) return;
+    const point = getPoint(e);
+    if (currentTool === "pen" || currentTool === "eraser") {
+      renderer.addPoint(point);
+      if (currentTool === "eraser") {
+        updateSelectionOverlay();
+      }
+    } else {
+      renderer.updateShape(point);
+    }
+  };
+  const end = (e) => {
+    endDrawingStrokeFromPointer(e);
+  };
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", end, true);
+  window.addEventListener("pointercancel", end, true);
+  detachDrawingStrokeListeners = () => {
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", end, true);
+    window.removeEventListener("pointercancel", end, true);
+    detachDrawingStrokeListeners = null;
+  };
+}
+
 resizeHandleBr.addEventListener("pointerdown", (e) => {
   if (!drawingEnabled || currentTool !== "select") return;
   if (!renderer.getSelectedId()) return;
@@ -785,9 +841,13 @@ rotateHandle.addEventListener("contextmenu", (e) => {
   scheduleAutoSave();
 });
 
-svgEl.addEventListener("lostpointercapture", () => {
+svgEl.addEventListener("lostpointercapture", (e) => {
   if (dragMode === "move") {
     dragMode = null;
+    return;
+  }
+  if (isDrawing && e.pointerId === drawingPointerId) {
+    endDrawingStrokeFromPointer(e);
   }
 });
 
@@ -813,7 +873,9 @@ svgEl.addEventListener("pointerdown", (e) => {
   }
 
   isDrawing = true;
+  drawingPointerId = e.pointerId;
   svgEl.setPointerCapture(e.pointerId);
+  attachDrawingStrokeListeners();
   const point = getPoint(e);
 
   if (currentTool === "pen" || currentTool === "eraser") {
@@ -838,16 +900,6 @@ svgEl.addEventListener("pointermove", (e) => {
     updateSelectionOverlay();
     return;
   }
-  if (!isDrawing) return;
-  const point = getPoint(e);
-  if (currentTool === "pen" || currentTool === "eraser") {
-    renderer.addPoint(point);
-    if (currentTool === "eraser") {
-      updateSelectionOverlay();
-    }
-  } else {
-    renderer.updateShape(point);
-  }
 });
 
 svgEl.addEventListener("pointerup", (e) => {
@@ -862,32 +914,8 @@ svgEl.addEventListener("pointerup", (e) => {
     scheduleAutoSave();
     return;
   }
-  if (!isDrawing) return;
-  isDrawing = false;
-  if (currentTool === "pen" || currentTool === "eraser") {
-    renderer.endStroke();
-    if (currentTool === "eraser") {
-      updateSelectionOverlay();
-    }
-  } else {
-    renderer.endShape();
-  }
-  scheduleAutoSave();
-});
-
-svgEl.addEventListener("pointerleave", () => {
-  if (dragMode) return;
-  if (isDrawing) {
-    isDrawing = false;
-    if (currentTool === "pen" || currentTool === "eraser") {
-      renderer.endStroke();
-      if (currentTool === "eraser") {
-        updateSelectionOverlay();
-      }
-    } else {
-      renderer.endShape();
-    }
-    scheduleAutoSave();
+  if (isDrawing && e.pointerId === drawingPointerId) {
+    endDrawingStrokeFromPointer(e);
   }
 });
 
@@ -1088,8 +1116,13 @@ function applyBackground() {
       appEl.style.background = "#ffffff";
       break;
     default:
-      // Linux: some compositors only hit-test non–fully-transparent overlay pixels.
-      appEl.style.background = linux ? "rgba(0, 0, 0, 0.015)" : "transparent";
+      // Linux: faint alpha only while drawing — keeps the buffer fully transparent in passthrough
+      // so click-through (setIgnoreMouseEvents) works; same for compositor hit regions.
+      if (linux && drawingEnabled) {
+        appEl.style.background = "rgba(0, 0, 0, 0.015)";
+      } else {
+        appEl.style.background = "transparent";
+      }
       break;
   }
 }
@@ -1133,6 +1166,9 @@ function applyOverlayUi() {
   setTimeout(() => {
     status.style.opacity = drawingEnabled ? "0.5" : "0";
   }, 1500);
+
+  renderer.setHitLayerPointerEvents(drawingEnabled);
+  applyBackground();
 
   forceRefreshDrawingCursor(false);
 }
